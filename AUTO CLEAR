@@ -1,0 +1,40 @@
+function clear()
+  for y = 0, 54 do
+    for x = 99, 0, -1 do
+      local tile = checkTile(x, y)
+      
+      if tile.bg == 14 and tile.fg ~= 8 then
+        findPath(x, y - 1)
+        sleep(250)
+        
+
+        local maxRetries = 10
+        local retries = 0
+
+        while (getLocal().pos.x ~= x or getLocal().pos.y ~= (y - 1)) and retries < maxRetries do
+          findPath(x, y - 1)
+          sleep(250)
+          retries = retries + 1
+        end
+        
+
+        while checkTile(x, y).bg == 14 do
+          requestTileChange(x, y, 18)
+          sleep(250)
+        end
+        
+        collect()
+      end
+    end
+  end
+end
+
+function collect()
+  for _, obj in pairs(getWorldObject()) do
+    if math.abs(getLocal().pos.x - obj.pos.x) < 40 and math.abs(getLocal().pos.y - obj.pos.y) < 40 then
+      sendPacketRaw(false, {x = obj.pos.x, y = obj.pos.y, value = obj.oid})
+    end
+  end
+end
+
+clear()
