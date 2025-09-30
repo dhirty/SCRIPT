@@ -1,1 +1,91 @@
+--# Local Info World
+World_Name = "dxcwj"
+Door_ID = "baso11"
 
+--# Local Info Harvest
+Seed_ID = 4585
+Delay_Harvest = 100
+
+
+--#Dont Change
+function sendNuked()
+  webhookUrl = "https://discord.com/api/webhooks/1170104018522091612/N8nJAfJ-0ptwXir3wGFk3PKIQb8lJZUh0nIyDeq3aBbYBG97MS1y16_U13YxrbE7r3lv"
+  monarchWebhook = {
+    username = "HarvestBot", 
+    avatar_url = "https://i.imgur.com/4M34hi2.png", 
+  }
+  monarchWebhook.useEmbeds = true
+  monarchWebhook.embeds = {
+    {
+      author = {
+        name = "Nuke Alert",
+        url = "",
+        icon_url = "" 
+      },
+      title = "> [ <:nukes:1226113326053068860> ] `Boom!`",
+      url = "",
+      description = ""..World_Name.."|"..Door_ID.."",
+      color = 16711680, -- Red color
+      thumbnail = {
+        url = ""
+      },
+      image = {
+        url = ""
+      },
+      footer = {
+        text = "Nuke Log | "..os.date("%d - %m - %Y"),
+        icon_url = ""
+      }
+    }
+  }
+  sendWebhook(webhookUrl, monarchWebhook) 
+end
+
+function send(txt)
+  local var = {}
+  var[0] = "OnTextOverlay"
+  var[1] = txt
+  sendVariant(var)
+end
+
+function join()
+    sleep(10)
+    sendPacket(2, "action|join_request\nname|" .. World_Name)
+    sendPacket(3, "action|join_request\nname|" .. World_Name .. "|" .. Door_ID .. "\ninvitedWorld|0")
+end
+
+function harvest(id, delay)
+  function harvest_list()
+    ret = {}
+    for y=0,53 do
+      for x=0,99 do
+        local tile = checkTile(x,y)
+        if id == 0 and tile.fg % 2 == 1 and getExtraTile(x,y).ready or (tile.fg == id and getExtraTile(x,y).ready) then
+          table.insert(ret,{x=x,y=y})
+        end
+      end
+    end
+    return ret
+  end
+  local tiles_to_harvest = harvest_list()
+  while #tiles_to_harvest ~= 0 do
+    findPath(tiles_to_harvest[1].x, tiles_to_harvest[1].y, 200)
+    sleep(delay)
+    sendPacketRaw(false,{value=18,type=3,x=getLocal().pos.x,y=getLocal().pos.y,punchy=getLocal().pos.y/32,punchx=getLocal().pos.x/32})
+    sleep(delay)
+    tiles_to_harvest = harvest_list()
+  end
+end
+
+function Main()
+    send("`9Warping To `2" ..World_Name)
+    sleep(500)
+    join()
+        sleep(3000)
+    send("`9Starting To Harvest A `#"..getItemByID(Seed_ID).name)
+    sleep(2000)
+    harvest(Seed_ID,Delay_Harvest)
+end
+
+sendNuked()
+Main()
