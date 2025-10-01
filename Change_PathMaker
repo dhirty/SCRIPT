@@ -1,0 +1,193 @@
+local x, y -- variabel untuk menyimpan posisi
+local lastChangedWorld = "" -- menyimpan world terakhir yang diubah
+
+-- Fungsi untuk mendapatkan semua pathmaker di world
+function getPathmakers()
+    local pathmakers = {}
+    for _, obj in pairs(getTile()) do
+        if obj.fg == 1684 then -- Hanya ambil tile dengan ID 1684 (pathmaker)
+            table.insert(pathmakers, {
+                id = obj.fg,
+                x = obj.pos.x,
+                y = obj.pos.y
+            })
+        end
+    end
+    return pathmakers
+end
+
+-- Fungsi untuk join path
+function joinPath(worldName, pathID)
+    sendPacket(3, "action|join_request\nname|" .. worldName .. "|" .. pathID .. "|\ninvitedWorld|0")
+    logToConsole("`9[`2JOINING PATH`9] World: `#" .. worldName .. "`9 | Path ID: `2" .. pathID)
+end
+
+-- Dialog untuk menu utama dan list pathmaker
+function showMainMenu()
+    local pathmakers = getPathmakers()
+    local menu = [[
+set_default_color|`o
+add_label_with_icon|big|`wPathmaker Scanner|left|1684|
+add_spacer|small|
+add_label_with_icon|small|`wTotal Pathmakers: `#]] .. #pathmakers .. [[|left|1684|
+add_spacer|small|
+add_button|scanPathmakers|`2Scan Pathmakers|noflags|0|0|
+add_spacer|small|
+end_dialog|pathscan|Cancel||
+]]
+    sendVariant({[0] = "OnDialogRequest", [1] = menu})
+end
+
+function showPathmakerList()
+    local pathmakers = getPathmakers()
+    if #pathmakers == 0 then
+        local noPathDialog = [[
+set_default_color|`o
+add_label_with_icon|big|`4No Pathmakers Found|left|1684|
+add_spacer|small|
+add_label|small|No pathmaker blocks (ID 1684) found in this world.|
+add_spacer|small|
+add_button|backToMenu|Back|noflags|0|0|
+end_dialog|nopath|Cancel||
+]]
+        sendVariant({[0] = "OnDialogRequest", [1] = noPathDialog})
+        return
+    end
+    
+    local itemList = ""
+    for i, path in ipairs(pathmakers) do
+        itemList = itemList .. "add_button|path_" .. i .. "|`wX: " .. path.x .. "  Y: " .. path.y .. "|noflags|0|0|\n"
+    end
+    
+    local listDialog = [[
+set_default_color|`o
+add_label_with_icon|big|`wPATHMAKER LIST|left|1684|
+add_spacer|small|
+add_label|small|`wFound `#]] .. #pathmakers .. [[ `wpathmakers in world:|
+add_spacer|small|
+]] .. itemList .. [[
+add_spacer|small|
+add_button|backToMenu|Back|noflags|0|0|
+end_dialog|pathlist|Cancel||
+]]
+    sendVariant({[0] = "OnDialogRequest", [1] = listDialog})
+end
+
+function showChangeDialog(selectedX, selectedY)
+    local changeDialog = [[
+set_default_color|`o
+add_label_with_icon|big|`wSELECTED PATHMAKER|left|1684|
+add_spacer|small|
+add_label|small|Position: X: `#]] .. selectedX .. [[`w, Y: `#]] .. selectedY .. [[|
+add_spacer|small|
+add_textbox|Click button below to change to CRAFT:|left|
+add_spacer|small|
+add_button|changePath|`2Change to CRAFT|noflags|0|0|
+add_button|backToList|Back|noflags|0|0|
+end_dialog|changepath|Cancel||
+]]
+    sendVariant({[0] = "OnDialogRequest", [1] = changeDialog})
+end
+
+function showSuccessDialog()
+    local worldName = getWorld().name
+    lastChangedWorld = worldName
+    local successDialog = [[
+set_default_color|`o
+add_label_with_icon|big|`2SUCCESS|left|1684|
+add_spacer|small|
+add_label|small|`wPath successfully changed to `2CRAFT`w!|
+add_spacer|small|
+add_label|small|`wWorld: `#]] .. worldName .. [[|
+add_label|small|`wPath ID: `2CRAFT|
+add_spacer|small|
+add_button|joinPath|`2Join CRAFT Path|noflags|0|0|
+add_button|backToMenu|Back to Menu|noflags|0|0|
+end_dialog|success|Cancel||
+]]
+    sendVariant({[0] = "OnDialogRequest", [1] = successDialog})
+end
+
+-- Hook untuk menangani semua packet
+AddHook("OnTextPacket", "pathHandler", function(type, str)
+    -- Command /gs untuk membuka menu
+    if str:find("/scan") then
+        showMainMenu()
+        return true
+    
+    -- Kembali ke menu utama
+    elseif str:find("backToMenu") then
+        showMainMenu()
+        return true
+    
+    -- Kembali ke list
+    elseif str:find("backToList") then
+        showPathmakerList()
+        return true
+    
+    -- Scan pathmakers
+    elseif str:find("scanPathmakers") then
+        showPathmakerList()
+        return true
+    
+    -- Memilih pathmaker berdasarkan koordinat
+    elseif str:find("path_") then
+        local pathmakers = getPathmakers()
+        local index = tonumber(str:match("path_(%d+)"))
+        
+        if index and pathmakers[index] then
+            local selected = pathmakers[index]
+            x, y = selected.x, selected.y
+            showChangeDialog(x, y)
+        end
+        return true
+    
+    -- Mengganti path dengan ID CRAFT
+    elseif str:find("changePath") then
+        if x and y then
+            sendPacket(2, "action|dialog_return\ndialog_name|sign_edit\ntilex|"..x.."|\ntiley|"..y.."|\nsign_text|CRAFT")
+            logToConsole("`9[`2PATH CHANGED`9] Position: X:`#"..x.." Y:`#"..y.." | New ID: `2CRAFT")
+            showSuccessDialog()
+        end
+        return true
+    
+    -- Join path setelah perubahan
+    elseif str:find("joinPath") then
+        if lastChangedWorld ~= "" then
+            joinPath(lastChangedWorld, "CRAFT")
+        else
+            joinPath(getWorld().name, "CRAFT")
+        end
+        return true
+    end
+    
+    return false
+end)
+
+function openDialog()
+  local dialog = [[
+set_bg_color|10,10,10,225
+set_border_color|255,255,255,180
+set_default_color|`0
+add_label_with_icon|big|`4Auto Change Path Maker|left|3802|
+add_spacer|small|
+add_label_with_icon|small|`4Author By: `3CraftID.GT.|left|10540|
+add_spacer|big|
+add_label_with_icon|small|`9Commands:|left|12544|
+add_spacer|small|
+add_label_with_icon|small|Added `6/scan `2To Open Dialog|left|482|
+add_label_with_icon|small|Added `6 Path Maker List|left|482|
+add_label_with_icon|small|Added `6 Icon To Change ID Path|left|482|
+add_label_with_icon|small|Added `6 Auto Join / Go To Path|left|482|
+add_spacer|small|
+add_url_button||Join Discord|NOFLAGS|https://discord.gg/sMgNPMxKe|wanna Join My Discord Server?|0|0|
+end_dialog|lusi|Close|
+]]
+
+  sendVariant({
+[0]= "OnDialogRequest", 
+[1]= dialog
+}, -1)
+end
+
+openDialog()
