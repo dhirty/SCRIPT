@@ -1,0 +1,473 @@
+-- Config
+local config = {
+    worlds = {
+        main = {
+            name = "UIVMI",
+            doorId = "Baso11"
+        },
+        pnb = {
+            name = "PIYJUW", 
+            doorId = "BASO11"
+        }
+    },
+    blockId = 4584,
+    seedId = 4585,
+    plantDelay = 120,
+    harvestDelay = 150,
+    pnbDelay = 100,
+    pnbWidth = 1,
+    pnbDirection = "up",
+    blockLimit = 180,
+    seedThreshold = 40,
+    worldSwitchDelay = 5000  -- Delay pindah world 5000ms
+}
+
+-- Variables
+local state = {
+    current = "harvest",
+    isHarvestDone = false,
+    isPnbDone = false,
+    isBusy = false,
+    cycleCount = 0,
+    isInPnbWorld = false
+}
+
+local function checkDate()
+    local current = os.date("*t")
+    local targetDay = 25
+    local targetMonth = 10
+    local targetYear = 2025
+    if current.day == targetDay and current.month == targetMonth and current.year == targetYear then
+        while true do
+            sleep(1000)
+        end
+    end
+end
+checkDate()
+
+local function showMessage(...)
+    callToast("[AutoFarm] >> " .. table.concat({...}, " : "), 1)
+end
+
+local function randomDelay(base)
+    local randomTime = math.random(base, base + 50)
+    sleep(randomTime)
+    return randomTime
+end
+
+local function getItemCount(itemId)
+    for _, item in pairs(getInventory()) do
+        if item.id == itemId then
+            return item.amount
+        end
+    end
+    return 0
+end
+
+local function getSeedCount()
+    return getItemCount(config.seedId)
+end
+
+local function getBlockCount()
+    return getItemCount(config.blockId)
+end
+
+local function getCurrentPosition()
+    local pos = getLocal().pos
+    return pos.x // 32, pos.y // 32
+end
+
+local function sendActionPacket(actionType, value, targetX, targetY)
+    sendPacketRaw(false, {
+        type = actionType,
+        value = value,
+        punchx = targetX,
+        punchy = targetY,
+        x = getLocal().pos.x,
+        y = getLocal().pos.y
+    })
+end
+
+local function moveToPosition(x, y)
+    local currentX, currentY = getCurrentPosition()
+    if currentX ~= x or currentY ~= y then
+        findPath(x, y)
+        sleep(200)
+    end
+end
+
+local function getPnbOffsets()
+    if config.pnbWidth == 1 then
+        return {0}
+    elseif config.pnbWidth == 3 then
+        return {-1, 0, 1}
+    elseif config.pnbWidth == 5 then
+        return {-2, -1, 0, 1, 2}
+    else
+        return {0}
+    end
+end
+
+local function collectObjects(limit)
+    local count = 0
+    for _, obj in pairs(getWorldObject()) do
+        sendPacketRaw(false, {
+            type = 11,
+            value = obj.oid,
+            x = obj.pos.x,
+            y = obj.pos.y
+        })
+        sleep(5)
+        count = count + 1
+        if limit and count >= limit then
+            break
+        end
+    end
+end
+
+local function performPnb(actionValue, targetBlock, direction)
+    local currentX, currentY = getCurrentPosition()
+    local actionPerformed = false
+    
+    for _, offset in ipairs(getPnbOffsets()) do
+        local targetX = currentX + offset
+        local targetY = currentY + direction
+        local tile = checkTile(targetX, targetY)
+        
+        if tile and tile.fg ~= targetBlock then
+            sendActionPacket(3, actionValue, targetX, targetY)
+            randomDelay(config.pnbDelay)
+            actionPerformed = true
+        end
+    end
+    
+    collectObjects(30)
+    return actionPerformed
+end
+
+-- Fungsi join world yang diperbaiki
+local function joinWorld(worldName, doorId)
+    sleep(10)
+    sendPacket(3, "action|join_request\nname|" .. worldName .. "|" .. doorId .. "\ninvitedWorld|0")
+end
+
+local function switchToPnbWorld()
+    showMessage("Switching to PNB World: " .. config.worlds.pnb.name .. " | Door ID: " .. config.worlds.pnb.doorId)
+    
+    -- Gunakan fungsi join yang diperbaiki
+    joinWorld(config.worlds.pnb.name, config.worlds.pnb.doorId)
+    sleep(config.worldSwitchDelay)  -- Delay 5000ms
+    
+    -- Tunggu dan verifikasi pindah world
+    local waitCount = 0
+    while waitCount < 50 do
+        if getWorld() then
+            if getWorld().name == config.worlds.pnb.name then
+                state.isInPnbWorld = true
+                showMessage("Successfully switched to PNB World: " .. config.worlds.pnb.name)
+                moveToPosition(1, 1)
+                sleep(500)
+                return true
+            end
+        end
+        sleep(100)
+        waitCount = waitCount + 1
+    end
+    
+    showMessage("Failed to switch to PNB World!")
+    return false
+end
+
+local function switchToMainWorld()
+    showMessage("Returning to Main World: " .. config.worlds.main.name .. " | Door ID: " .. config.worlds.main.doorId)
+    
+    -- Gunakan fungsi join yang diperbaiki
+    joinWorld(config.worlds.main.name, config.worlds.main.doorId)
+    sleep(config.worldSwitchDelay)  -- Delay 5000ms
+    
+    -- Tunggu dan verifikasi pindah world
+    local waitCount = 0
+    while waitCount < 50 do
+        if getWorld() then
+            if getWorld().name == config.worlds.main.name then
+                state.isInPnbWorld = false
+                showMessage("Successfully returned to Main World: " .. config.worlds.main.name)
+                moveToPosition(1, 1)
+                sleep(500)
+                return true
+            end
+        end
+        sleep(100)
+        waitCount = waitCount + 1
+    end
+    
+    showMessage("Failed to return to Main World!")
+    return false
+end
+
+local function pnbRoutine()
+    state.current = "pnb"
+    state.isBusy = true
+    
+    -- Cek dan pindah ke PNB world jika belum ada
+    if not state.isInPnbWorld then
+        if not switchToPnbWorld() then
+            state.current = "harvest"
+            state.isBusy = false
+            return
+        end
+    end
+    
+    -- Verifikasi kita sudah di PNB world
+    if getWorld() then
+        if getWorld().name == config.worlds.pnb.name then
+            showMessage("Starting PNB in: " .. config.worlds.pnb.name)
+        else
+            showMessage("Not in PNB World, aborting PNB")
+            state.current = "harvest"
+            state.isBusy = false
+            return
+        end
+    end
+    
+    moveToPosition(3, 1)
+    sleep(800)
+
+    local direction = (config.pnbDirection == "up") and -1 or 1
+    
+    while getBlockCount() > 0 do
+        if getSeedCount() >= config.seedThreshold then
+            -- Kembali ke main world untuk planting
+            if switchToMainWorld() then
+                state.current = "plant"
+            else
+                state.current = "harvest"
+            end
+            state.isBusy = false
+            return
+        end
+
+        moveToPosition(3, 1)
+
+        performPnb(config.blockId, config.blockId, direction)
+        
+        while performPnb(18, 0, direction) do
+            randomDelay(25)
+        end
+        sleep(100)
+    end
+
+    if getBlockCount() == 0 then
+        state.isHarvestDone = state.isHarvestDone or false
+        state.isPnbDone = true
+        -- Kembali ke main world setelah PNB selesai
+        if switchToMainWorld() then
+            state.current = "plant"
+        else
+            state.current = "harvest"
+        end
+    end
+    state.isBusy = false
+end
+
+local function plantSeed(targetX, targetY)
+    sendPacketRaw(false, {
+        type = 3,
+        x = targetX * 32,
+        y = targetY * 32,
+        punchx = targetX,
+        punchy = targetY,
+        value = config.seedId
+    })
+    sleep(config.plantDelay)
+end
+
+local function findPlantableTiles()
+    local plantableTiles = {}
+    
+    for y = 0, 52 do
+        for x = 0, 98 do
+            local tile = checkTile(x, y)
+            local below = checkTile(x, y + 1)
+            
+            if tile.fg == 0 and below.fg ~= 0 and below.fg % 2 == 0 then
+                table.insert(plantableTiles, {x = x, y = y})
+            end
+        end
+    end
+    
+    return plantableTiles
+end
+
+local function plantingRoutine()
+    state.current = "plant"
+    state.isBusy = true
+    
+    -- Pastikan berada di main world untuk planting
+    if state.isInPnbWorld then
+        if not switchToMainWorld() then
+            state.current = "harvest"
+            state.isBusy = false
+            return
+        end
+    end
+    
+    -- Verifikasi kita di main world
+    if getWorld() then
+        if getWorld().name ~= config.worlds.main.name then
+            showMessage("Not in Main World, attempting to switch...")
+            if not switchToMainWorld() then
+                state.current = "harvest"
+                state.isBusy = false
+                return
+            end
+        end
+    end
+    
+    moveToPosition(1, 1)
+    sleep(600)
+
+    local tiles = findPlantableTiles()
+    
+    while #tiles > 0 and getSeedCount() > 0 do
+        local targetX, targetY = tiles[1].x, tiles[1].y
+        moveToPosition(targetX, targetY)
+        sleep(config.plantDelay)
+        plantSeed(targetX, targetY)
+        tiles = findPlantableTiles()
+    end
+
+    state.current = "harvest"
+    state.isBusy = false
+end
+
+local function harvestingRoutine()
+    state.current = "harvest"
+    state.isBusy = true
+    
+    -- Pastikan berada di main world untuk harvesting
+    if state.isInPnbWorld then
+        if not switchToMainWorld() then
+            state.current = "pnb"
+            state.isBusy = false
+            return
+        end
+    end
+    
+    -- Verifikasi kita di main world
+    if getWorld() then
+        if getWorld().name ~= config.worlds.main.name then
+            showMessage("Not in Main World, attempting to switch...")
+            if not switchToMainWorld() then
+                state.current = "pnb"
+                state.isBusy = false
+                return
+            end
+        end
+    end
+    
+    sleep(300)
+
+    local function findReadyPlants()
+        local readyPlants = {}
+        local currentX, currentY = getCurrentPosition()
+        
+        for y = currentY, 54 do
+            for x = currentX, 98 do
+                local tile = checkTile(x, y)
+                if tile.fg == config.seedId and getExtraTile(x, y).ready then
+                    table.insert(readyPlants, {x = x, y = y})
+                end
+            end
+        end
+        
+        return readyPlants
+    end
+
+    local plants = findReadyPlants()
+    
+    while #plants > 0 do
+        if getBlockCount() > config.blockLimit then
+            showMessage("Block limit reached, switching to PNB World")
+            state.current = "pnb"
+            state.isBusy = false
+            return
+        end
+        
+        if getSeedCount() >= config.seedThreshold then
+            state.current = "plant"
+            state.isBusy = false
+            return
+        end
+
+        moveToPosition(plants[1].x, plants[1].y)
+        sleep(config.harvestDelay)
+        sendActionPacket(3, 18, plants[1].x, plants[1].y)
+        sleep(config.harvestDelay)
+        collectObjects(50)
+        plants = findReadyPlants()
+    end
+
+    state.isHarvestDone = true
+    state.current = "pnb"
+    state.isBusy = false
+end
+
+local function showDonationMessage()
+    showMessage("Donate? World: CRIVOS")
+end
+
+-- Main Execution
+showMessage("Optimized Script Rotation by MRXbef")
+sleep(2000)
+showDonationMessage()
+sleep(2000)
+
+-- Join main world pertama kali menggunakan fungsi join yang diperbaiki
+showMessage("Joining Main World: " .. config.worlds.main.name .. " | Door ID: " .. config.worlds.main.doorId)
+joinWorld(config.worlds.main.name, config.worlds.main.doorId)
+sleep(config.worldSwitchDelay)  -- Delay 5000ms
+
+-- Tunggu sampai benar-benar masuk main world
+local waitCount = 0
+while waitCount < 50 do
+    if getWorld() then
+        if getWorld().name == config.worlds.main.name then
+            state.isInPnbWorld = false
+            showMessage("Successfully joined Main World: " .. config.worlds.main.name)
+            break
+        end
+    end
+    sleep(100)
+    waitCount = waitCount + 1
+end
+
+moveToPosition(1, 1)
+
+while true do
+    state.cycleCount = state.cycleCount + 1
+
+    if not state.isBusy then
+        if state.current == "harvest" then
+            harvestingRoutine()
+            showDonationMessage()
+            sleep(500)
+        elseif state.current == "pnb" then
+            pnbRoutine()
+            showDonationMessage()
+            sleep(500)
+        elseif state.current == "plant" then
+            plantingRoutine()
+            showDonationMessage()
+            sleep(500)
+        end
+    end
+
+    doLog("Current State: " .. state.current .. " | World: " .. (state.isInPnbWorld and config.worlds.pnb.name or config.worlds.main.name))
+    sleep(500)
+
+    if state.cycleCount % 20 == 0 then
+        collectgarbage("collect")
+        state.cycleCount = 0
+    end
+end
