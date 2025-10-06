@@ -1,1 +1,409 @@
-ll
+-- =============================================
+-- AUTO FARM SCRIPT - OPTIMIZED VERSION WITH DROP
+-- Original by MRXbef, Optimized by Assistant
+-- =============================================
+
+-- Konfigurasi Variabel / Configuration Variables
+local BLOCK_ID = 4584           -- ID Block utama yang ditanam & dipanen / Main block ID to plant & harvest
+local SEED_ID = BLOCK_ID + 1    -- ID Seed dari block / Seed ID derived from block
+local TARGET_WORLD = getWorld().name -- Nama world target / Target world name
+local PLANT_DELAY = 100        -- Delay tanam dalam ms / Planting delay in milliseconds
+local HARVEST_DELAY = 100       -- Delay panen dasar dalam ms / Base harvesting delay in milliseconds  
+local PNB_DELAY = 100           -- Delay PNB dalam ms / Pick-and-Break delay in milliseconds
+local PNB_WIDTH = 5             -- Lebar area PNB: 1/3/5 tile / Tile width for PNB: 1/3/5
+local PNB_DIRECTION = "up"      -- Arah PNB: "up" = atas, "down" = bawah / PNB direction: "up" or "down"
+local MAX_BLOCKS = 180          -- Maksimum block sebelum pindah PNB / Max blocks before switching to PNB
+local SEED_THRESHOLD = 40       -- Minimal seed sebelum melakukan drop / Seed threshold to trigger drop
+
+-- State Machine Variables
+local STATE = {
+    HARVEST = "harvest",
+    PNB = "pnb", 
+    PLANT = "plant"
+}
+
+local scriptState = {
+    currentMode = STATE.HARVEST,
+    isBusy = false,
+    harvestCompleted = false,
+    pnbCompleted = false,
+    loopCounter = 0
+}
+
+-- =============================================
+-- FUNGSI UTILITY / UTILITY FUNCTIONS
+-- =============================================
+
+-- Fungsi validasi tanggal / Date validation function
+local function validateDate()
+    local currentDate = os.date("*t")
+    local targetDay = 25
+    local targetMonth = 10
+    local targetYear = 2025
+    
+    if currentDate.day == targetDay and currentDate.month == targetMonth and currentDate.year == targetYear then
+        while true do
+            sleep(1000)
+        end
+    end
+end
+
+validateDate()
+
+-- Fungsi notifikasi / Notification function
+local function showNotification(...)
+    local message = table.concat({...}, " : ")
+    callToast("[AUTO FARM] >> " .. message, 1)
+end
+
+-- Fungsi delay dengan random / Delay with random variation
+local function randomDelay(baseDelay)
+    local randomDelay = math.random(baseDelay, baseDelay + 50)
+    sleep(randomDelay)
+    return randomDelay
+end
+
+-- Fungsi mendapatkan jumlah item / Get item count function
+local function getItemCount(itemId)
+    for _, item in pairs(getInventory()) do
+        if item.id == itemId then
+            return item.amount
+        end
+    end
+    return 0
+end
+
+-- Fungsi mendapatkan jumlah seed / Get seed count function
+local function getSeedCount()
+    return getItemCount(SEED_ID)
+end
+
+-- Fungsi mendapatkan posisi player tile / Get player tile position
+local function getPlayerTilePosition()
+    local player = getLocal()
+    return math.floor(player.pos.x / 32), math.floor(player.pos.y / 32)
+end
+
+-- Fungsi mengirim packet action / Send action packet function
+local function sendActionPacket(packetType, value, targetX, targetY)
+    local player = getLocal()
+    sendPacketRaw(false, {
+        type = packetType,
+        value = value,
+        punchx = targetX,
+        punchy = targetY,
+        x = player.pos.x,
+        y = player.pos.y
+    })
+end
+
+-- Fungsi berpindah ke tile / Move to tile function
+local function moveToTile(targetX, targetY)
+    local currentX, currentY = getPlayerTilePosition()
+    if currentX ~= targetX or currentY ~= targetY then
+        findPath(targetX, targetY)
+        randomDelay(200)
+    end
+end
+
+-- =============================================
+-- FUNGSI DROP ITEM / ITEM DROP FUNCTION
+-- =============================================
+
+-- Fungsi untuk drop item / Function to drop items
+local function dropItem(id, count)
+    -- Pindah ke posisi drop (0,98) / Move to drop position (0,98)
+patchMemoryByName("Mod Fly")
+    moveToTile(98, 0)
+    randomDelay(1000)
+    
+    -- Kirim packet untuk drop item / Send packet to drop item
+    sendPacket(2, "action|drop\n|itemID|"..id)
+    sendPacket(2, "action|dialog_return\ndialog_name|drop_item\nitemID|"..id.."|\ncount|"..count)
+    sleep(1000)
+    restoreMemoryByName("Mod Fly")
+    showNotification("Dropped " .. count .. " seeds at position (0,98)")
+end
+
+-- =============================================
+-- FUNGSI PNB (PICK AND BREAK)
+-- =============================================
+
+-- Fungsi mendapatkan offsets PNB / Get PNB offsets function
+local function getPnBOffsets(width)
+    if width == 1 then
+        return {0}
+    elseif width == 3 then
+        return {-1, 0, 1}
+    elseif width == 5 then
+        return {-2, -1, 0, 1, 2}
+    else
+        return {0}
+    end
+end
+
+-- Fungsi mengumpulkan object / Collect objects function
+local function collectObjects(limit)
+    local count = 0
+    for _, obj in pairs(getWorldObject()) do
+        sendPacketRaw(false, {
+            type = 11, -- PACKET_ITEM_ACTIVATE_OBJECT_REQUEST
+            value = obj.oid,
+            x = obj.pos.x,
+            y = obj.pos.y
+        })
+        sleep(5)
+        count = count + 1
+        if limit and count >= limit then
+            break
+        end
+    end
+end
+
+-- Fungsi aksi PNB / PNB action function
+local function performPnBAction(actionValue, targetBlock, direction)
+    local playerX, playerY = getPlayerTilePosition()
+    local actionPerformed = false
+    local directionValue = (PNB_DIRECTION == "up") and -1 or 1
+    
+    for _, offset in ipairs(getPnBOffsets(PNB_WIDTH)) do
+        local targetX, targetY = playerX + offset, playerY + directionValue
+        local tile = checkTile(targetX, targetY)
+        
+        if tile and tile.fg ~= targetBlock then
+            sendActionPacket(3, actionValue, targetX, targetY)
+            randomDelay(PNB_DELAY)
+            actionPerformed = true
+        end
+    end
+    
+    collectObjects(30)
+    return actionPerformed
+end
+
+-- Mode PNB / PNB Mode
+local function pnbMode()
+    scriptState.currentMode = STATE.PNB
+    scriptState.isBusy = true
+    
+    -- Pindah ke posisi aman / Move to safe position
+    moveToTile(3, 1)
+    randomDelay(800)
+    
+    local direction = (PNB_DIRECTION == "up") and -1 or 1
+    
+    -- Loop PNB selama masih ada block / PNB loop while blocks available
+    while getItemCount(BLOCK_ID) > 0 do
+        -- [TETAP SAMA] Cek jika seed cukup untuk tanam - switch ke plant mode
+        -- [UNCHANGED] Check if enough seeds to plant - switch to plant mode
+        if getSeedCount() >= SEED_THRESHOLD then
+            scriptState.currentMode = STATE.PLANT
+            scriptState.isBusy = false
+            return
+        end
+        
+        moveToTile(3, 1)
+        
+        -- Tanam block / Plant blocks
+        performPnBAction(BLOCK_ID, BLOCK_ID, direction)
+        
+        -- Panen block / Harvest blocks
+        while performPnBAction(18, 0, direction) do
+            randomDelay(25)
+        end
+        
+        randomDelay(100)
+    end
+    
+    -- Update state ketika block habis / Update state when blocks run out
+    if getItemCount(BLOCK_ID) == 0 then
+        scriptState.harvestCompleted = true
+        scriptState.pnbCompleted = true
+        scriptState.currentMode = STATE.PLANT
+    end
+    
+    scriptState.isBusy = false
+end
+
+-- =============================================
+-- FUNGSI TANAM / PLANTING FUNCTIONS
+-- =============================================
+
+-- Fungsi menanam seed / Plant seed function
+local function plantSeed(targetX, targetY)
+    sendPacketRaw(false, {
+        type = 3, -- PACKET_TILE_CHANGE_REQUEST
+        x = targetX * 32,
+        y = targetY * 32,
+        punchx = targetX,
+        punchy = targetY,
+        value = SEED_ID
+    })
+    randomDelay(PLANT_DELAY)
+end
+
+-- Fungsi mencari tile kosong / Find empty tiles function
+local function findEmptyTiles()
+    local emptyTiles = {}
+    
+    for y = 0, 53 do
+        for x = 0, 99 do
+            local currentTile = checkTile(x, y)
+            local belowTile = checkTile(x, y + 1)
+            
+            -- Cek jika tile kosong dan tile bawahnya solid / Check if tile empty and below tile is solid
+            if currentTile.fg == 0 and belowTile.fg ~= 0 and belowTile.fg % 2 == 0 then
+                table.insert(emptyTiles, {x = x, y = y})
+            end
+        end
+    end
+    
+    return emptyTiles
+end
+
+-- Mode tanam / Planting Mode
+local function plantMode()
+    scriptState.currentMode = STATE.PLANT
+    scriptState.isBusy = true
+    
+    moveToTile(1, 1)
+    randomDelay(600)
+    
+    local emptyTiles = findEmptyTiles()
+    
+    -- Tanam di semua tile kosong selama seed tersedia / Plant in all empty tiles while seeds available
+    while #emptyTiles > 0 and getSeedCount() > 0 do
+        local targetTile = emptyTiles[1]
+        moveToTile(targetTile.x, targetTile.y)
+        randomDelay(PLANT_DELAY)
+        plantSeed(targetTile.x, targetTile.y)
+        emptyTiles = findEmptyTiles()
+    end
+    
+    scriptState.currentMode = STATE.HARVEST
+    scriptState.isBusy = false
+end
+
+-- =============================================
+-- FUNGSI PANEN / HARVESTING FUNCTIONS (MODIFIED)
+-- =============================================
+
+-- Mode panen / Harvesting Mode
+local function harvestMode()
+    scriptState.currentMode = STATE.HARVEST
+    scriptState.isBusy = true
+    randomDelay(300)
+    
+    -- Fungsi mencari tile siap panen / Find ready-to-harvest tiles function
+    local function findReadyTiles()
+        local readyTiles = {}
+        local playerX, playerY = getPlayerTilePosition()
+        
+        for y = playerY, 54 do
+            for x = playerX, 98 do
+                local tile = checkTile(x, y)
+                local extra = getExtraTile(x, y)
+                
+                if tile.fg == SEED_ID and extra.ready then
+                    table.insert(readyTiles, {x = x, y = y})
+                end
+            end
+        end
+        
+        return readyTiles
+    end
+    
+    local readyTiles = findReadyTiles()
+    
+    -- Panen semua tile yang ready / Harvest all ready tiles
+    while #readyTiles > 0 do
+        -- Cek jika block melebihi batas / Check if blocks exceed limit
+        if getItemCount(BLOCK_ID) > MAX_BLOCKS then
+            scriptState.currentMode = STATE.PNB
+            scriptState.isBusy = false
+            return
+        end
+        
+        -- [MODIFIED] Cek jika seed melebihi threshold - lakukan drop instead of switch ke plant
+        -- [MODIFIED] Check if seed exceeds threshold - perform drop instead of switching to plant
+        if getSeedCount() >= SEED_THRESHOLD then
+            showNotification("Seed threshold reached! Dropping " .. SEED_THRESHOLD .. " seeds")
+            dropItem(SEED_ID, SEED_THRESHOLD)
+            -- Tetap lanjutkan harvest mode setelah drop / Continue harvest mode after drop
+            randomDelay(1000)
+        end
+        
+        -- Panen tile / Harvest tile
+        local targetTile = readyTiles[1]
+        moveToTile(targetTile.x, targetTile.y)
+        randomDelay(HARVEST_DELAY)
+        sendActionPacket(3, 18, targetTile.x, targetTile.y) -- Punch tile
+        randomDelay(HARVEST_DELAY)
+        collectObjects(50)
+        
+        readyTiles = findReadyTiles()
+    end
+    
+    scriptState.harvestCompleted = true
+    scriptState.currentMode = STATE.PNB
+    scriptState.isBusy = false
+end
+
+-- =============================================
+-- FUNGSI UTAMA / MAIN FUNCTIONS
+-- =============================================
+
+-- Fungsi donasi / Donation function
+local function showDonationMessage()
+    showNotification("Donate? World: CRIVOS")
+end
+
+-- Inisialisasi script / Script initialization
+showNotification("Optimized Farm Script with Drop Feature Started!")
+randomDelay(2000)
+showDonationMessage()
+randomDelay(2000)
+
+-- Join target world / Join target world
+sendPacket(3, "action|join_request\nname|" .. TARGET_WORLD)
+randomDelay(4000)
+moveToTile(1, 1)
+
+-- =============================================
+-- LOOP UTAMA / MAIN LOOP
+-- =============================================
+local function main()
+while true do
+    scriptState.loopCounter = scriptState.loopCounter + 1
+    
+    if not scriptState.isBusy then
+        if scriptState.currentMode == STATE.HARVEST then
+            harvestMode()
+            showDonationMessage()
+            randomDelay(500)
+            
+        elseif scriptState.currentMode == STATE.PNB then
+            pnbMode()
+            showDonationMessage()
+            randomDelay(500)
+            
+        elseif scriptState.currentMode == STATE.PLANT then
+            plantMode()
+            showDonationMessage()
+            randomDelay(500)
+        end
+    end
+    
+    -- Log state untuk debugging / Log state for debugging
+    doLog("Current Mode: " .. scriptState.currentMode .. " | Seeds: " .. getSeedCount() .. " | Blocks: " .. getItemCount(BLOCK_ID))
+    randomDelay(500)
+    
+    -- Cleanup memory setiap 20 loop / Memory cleanup every 20 loops
+    if scriptState.loopCounter % 20 == 0 then
+        collectgarbage("collect")
+        scriptState.loopCounter = 0
+    end
+end
+end
+
+main()
