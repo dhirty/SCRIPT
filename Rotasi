@@ -4,16 +4,17 @@
 -- =============================================
 
 -- Konfigurasi Variabel / Configuration Variables
-local BLOCK_ID = 182           -- ID Block utama yang ditanam & dipanen / Main block ID to plant & harvest
+local BLOCK_ID = 4584           -- ID Block utama yang ditanam & dipanen / Main block ID to plant & harvest
 local SEED_ID = BLOCK_ID + 1    -- ID Seed dari block / Seed ID derived from block
-local TARGET_WORLD = "HJPMF|Baso11" -- Nama world target / Target world name
+local TARGET_WORLD = getWorld().name -- Nama world target / Target world name
+local TARGET_DOORID = "BASO11" -- Door ID Target World
 local PLANT_DELAY = 100        -- Delay tanam dalam ms / Planting delay in milliseconds
 local HARVEST_DELAY = 100       -- Delay panen dasar dalam ms / Base harvesting delay in milliseconds  
 local PNB_DELAY = 100           -- Delay PNB dalam ms / Pick-and-Break delay in milliseconds
 local PNB_WIDTH = 5             -- Lebar area PNB: 1/3/5 tile / Tile width for PNB: 1/3/5
 local PNB_DIRECTION = "up"      -- Arah PNB: "up" = atas, "down" = bawah / PNB direction: "up" or "down"
 local MAX_BLOCKS = 180          -- Maksimum block sebelum pindah PNB / Max blocks before switching to PNB
-local SEED_THRESHOLD = 40       -- Minimal seed sebelum melakukan drop / Seed threshold to trigger drop
+local SEED_THRESHOLD = 200       -- Minimal seed sebelum melakukan drop / Seed threshold to trigger drop
 
 -- State Machine Variables
 local STATE = {
@@ -365,7 +366,7 @@ showDonationMessage()
 randomDelay(2000)
 
 -- Join target world / Join target world
-sendPacket(3, "action|join_request\nname|" .. TARGET_WORLD)
+sendPacket(3, "action|join_request\nname|" .. TARGET_WORLD .. "|" .. TARGET_DOORID .. "\ninvitedWorld|0")
 randomDelay(4000)
 moveToTile(1, 1)
 
