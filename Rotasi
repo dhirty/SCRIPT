@@ -6,8 +6,7 @@
 -- Konfigurasi Variabel / Configuration Variables
 local BLOCK_ID = 4584           -- ID Block utama yang ditanam & dipanen / Main block ID to plant & harvest
 local SEED_ID = BLOCK_ID + 1    -- ID Seed dari block / Seed ID derived from block
-local TARGET_WORLD = getWorld().name -- Nama world target / Target world name
-local TARGET_DOORID = "BASO11"
+local TARGET_WORLD = "HJPMF|Baso11" -- Nama world target / Target world name
 local PLANT_DELAY = 100        -- Delay tanam dalam ms / Planting delay in milliseconds
 local HARVEST_DELAY = 100       -- Delay panen dasar dalam ms / Base harvesting delay in milliseconds  
 local PNB_DELAY = 100           -- Delay PNB dalam ms / Pick-and-Break delay in milliseconds
@@ -366,7 +365,7 @@ showDonationMessage()
 randomDelay(2000)
 
 -- Join target world / Join target world
-sendPacket(3, "action|join_request\nname|" .. TARGET_WORLD .. "|" ..TARGET_DOORID..")
+sendPacket(3, "action|join_request\nname|" .. TARGET_WORLD)
 randomDelay(4000)
 moveToTile(1, 1)
 
