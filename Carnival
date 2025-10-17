@@ -182,17 +182,16 @@ function DeathRace()
     
     if x == 33 and y == 13 then
         enter(33, 13)
-        sleep(500)
+        sleep(100)
     elseif x == 31 and y == 15 then
         findPath(31, 11)
-        sleep(800)
+        sleep(100)
     elseif x == 31 and y == 11 then
-        requestTileChange(31, 11, 18)
-        sleep(500)
+        sleep(100)
         retryCount = 0
     else
         findPath(33, 13)
-        sleep(800)
+        sleep(200)
     end
 end
 
