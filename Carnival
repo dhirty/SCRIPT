@@ -16,6 +16,8 @@ local lastPosition = nil
 local stuckTimer = 0
 local retryCount = 0
 
+patchMemoryByName("Mod fly")
+
 function enter(x, y)
     local pkt = {}
     pkt.type = 7
