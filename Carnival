@@ -1,0 +1,230 @@
+local mode = 1 -- 1 = Maze, 2 = Death Race, 3 = Growganoth Right, 4 = Growganoth Left
+local running = true
+local Delay_World = 3000
+local Ticket_ID = 1898
+local Carnival_World = "CARNIVAL"
+local Storage_World = "FBAAI|BASO12"
+
+-- Config untuk take item
+local config = {
+    Delay_Find_Path = 800
+}
+
+function enter(x, y)
+    local pkt = {}
+    pkt.type = 7
+    pkt.punchx = x
+    pkt.punchy = y        
+    pkt.x = getLocal().pos.x        
+    pkt.y = getLocal().pos.y       
+    pkt.value = 18
+    sendPacketRaw(false, pkt)
+end
+
+-- Fungsi cek inventory
+function Inventory(id)
+    for _, x in pairs(getInventory()) do
+        if x.id == id then
+            return x.amount
+        end
+    end
+    return 0
+end
+
+-- Fungsi warp
+function Warp(worldName)
+    sleep(100)
+    sendPacket(3, "action|join_request\nname|" .. worldName)
+    sleep(Delay_World)
+end
+
+-- Fungsi collect item dalam range 3 tile
+function Collect(x, y)
+    local playerX = math.floor(getLocal().pos.x / 32)
+    local playerY = math.floor(getLocal().pos.y / 32)
+    
+    -- Cek jika dalam range 3 tile
+    if math.abs(playerX - x) <= 3 and math.abs(playerY - y) <= 3 then
+        requestCollect(x, y, Ticket_ID)
+        return true
+    end
+    return false
+end
+
+-- Fungsi take ticket
+function Take_Item()
+    for _, obj in pairs(getWorldObject()) do
+        if obj.id == Ticket_ID then
+            local targetX = math.floor(obj.pos.x / 32)
+            local targetY = math.floor(obj.pos.y / 32)
+            
+            findPath(targetX, targetY)
+            sleep(config.Delay_Find_Path)
+            
+            -- Coba collect
+            if Collect(targetX, targetY) then
+                sleep(1000)
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Fungsi refill ticket
+function Refill_Ticket()
+    logToConsole("Ticket habis, mengambil ticket...")
+    
+    -- Warp ke world storage
+    Warp(Storage_World)
+    sleep(2000)
+    
+    -- Coba ambil ticket maksimal 10x
+    for i = 1, 10 do
+        if Take_Item() then
+            logToConsole("Berhasil mengambil ticket!")
+            sleep(2000)
+            
+            -- Kembali ke world carnival
+            Warp(Carnival_World)
+            sleep(2000)
+            return true
+        end
+        sleep(1000)
+    end
+    
+    logToConsole("Gagal mengambil ticket!")
+    return false
+end
+
+-- ===== MODE 1: MAZE =====
+function Maze()
+    local x = math.floor(getLocal().pos.x / 32)
+    local y = math.floor(getLocal().pos.y / 32)
+    
+    -- Masuk ke maze dari luar
+    if x == 26 and y == 25 then
+        enter(26, 25)
+        sleep(500)
+    
+    -- Mulai penyelesaian maze dari 14,32
+    elseif x == 14 and y == 32 then
+        findPath(24, 24)
+        sleep(800)
+    
+    -- Jika sudah mencapai target 24,24
+    elseif x == 24 and y == 24 then
+        sleep(500)
+    
+    else
+        findPath(26, 25)
+        sleep(800)
+    end
+end
+
+-- ===== MODE 2: DEATH RACE =====
+function DeathRace()
+    local x = math.floor(getLocal().pos.x / 32)
+    local y = math.floor(getLocal().pos.y / 32)
+    
+    -- Masuk ke Death Race
+    if x == 33 and y == 13 then
+        enter(33, 13)
+        sleep(500)
+    
+    -- Setelah masuk, mulai dari 31,15 menuju target 31,11
+    elseif x == 31 and y == 15 then
+        findPath(31, 11)
+        sleep(800)
+    
+    -- Jika sudah mencapai target 31,11
+    elseif x == 31 and y == 11 then
+        requestTileChange(31, 11, 18)
+        sleep(500)
+    
+    else
+        -- Default: menuju pintu masuk Death Race
+        findPath(33, 13)
+        sleep(800)
+    end
+end
+
+-- ===== MODE 3: GROWGANOTH RIGHT =====
+function GrowganothRight()
+    local x = math.floor(getLocal().pos.x / 32)
+    local y = math.floor(getLocal().pos.y / 32)
+    
+    -- Masuk ke Growganoth Right
+    if x == 92 and y == 37 then
+        enter(92, 37)
+        sleep(500)
+    
+    -- Setelah masuk, mulai dari 96,53 menuju target 96,23
+    elseif x == 96 and y == 53 then
+        findPath(96, 23)
+        sleep(800)
+    
+    -- Jika sudah mencapai target 96,23
+    elseif x == 96 and y == 23 then
+        requestTileChange(96, 23, 18)
+        sleep(500)
+    
+    else
+        -- Default: menuju pintu masuk Growganoth Right
+        findPath(92, 37)
+        sleep(800)
+    end
+end
+
+-- ===== MODE 4: GROWGANOTH LEFT =====
+function GrowganothLeft()
+    local x = math.floor(getLocal().pos.x / 32)
+    local y = math.floor(getLocal().pos.y / 32)
+    
+    -- Masuk ke Growganoth Left
+    if x == 7 and y == 37 then
+        enter(7, 37)
+        sleep(500)
+    
+    -- Setelah masuk, mulai dari 3,53 menuju target 3,23
+    elseif x == 3 and y == 53 then
+        findPath(3, 23)
+        sleep(800)
+    
+    -- Jika sudah mencapai target 3,23
+    elseif x == 3 and y == 23 then
+        requestTileChange(3, 23, 18)
+        sleep(500)
+    
+    else
+        -- Default: menuju pintu masuk Growganoth Left
+        findPath(7, 37)
+        sleep(800)
+    end
+end
+
+-- ===== MAIN EXECUTION =====
+function executeMode()
+    -- Cek ticket sebelum menjalankan mode
+    if Inventory(Ticket_ID) <= 0 then
+        Refill_Ticket()
+        return
+    end
+    
+    -- Jalankan mode yang dipilih
+    if mode == 1 then
+        Maze()
+    elseif mode == 2 then
+        DeathRace()
+    elseif mode == 3 then
+        GrowganothRight()
+    elseif mode == 4 then
+        GrowganothLeft()
+    end
+end
+
+-- ===== MAIN LOOP =====
+while running do
+    executeMode()
+    sleep(1000)
+end
