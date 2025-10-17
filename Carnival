@@ -7,8 +7,8 @@ local Storage_World = "FBAAI|BASO12"
 
 -- Config untuk anti-stuck
 local config = {
-    Max_Stuck_Time = 10000, -- 10 detik
-    Retry_Attempts = 3
+    Max_Stuck_Time = 5000, -- 10 detik
+    Retry_Attempts = 10
 }
 
 -- Variabel untuk deteksi stuck
