@@ -1,14 +1,22 @@
-local mode = 2 -- 1 = Maze, 2 = Death Race, 3 = Growganoth Right, 4 = Growganoth Left
+local mode = 2
 local running = true
-local Delay_World = 3000
+local Delay_World = 5000
 local Ticket_ID = 1898
 local Carnival_World = "CARNIVAL"
 local Storage_World = "FBAAI|BASO12"
 
--- Config untuk take item
+-- Config untuk anti-stuck
 local config = {
-    Delay_Find_Path = 800
+    Max_Stuck_Time = 5000, -- 10 detik
+    Retry_Attempts = 10
 }
+
+-- Variabel untuk deteksi stuck
+local lastPosition = nil
+local stuckTimer = 0
+local retryCount = 0
+
+patchMemoryByName("Mod fly")
 
 function enter(x, y)
     local pkt = {}
@@ -43,7 +51,6 @@ function Collect(x, y)
     local playerX = math.floor(getLocal().pos.x / 32)
     local playerY = math.floor(getLocal().pos.y / 32)
     
-    -- Cek jika dalam range 3 tile
     if math.abs(playerX - x) <= 3 and math.abs(playerY - y) <= 3 then
         requestCollect(x, y, Ticket_ID)
         return true
@@ -59,9 +66,8 @@ function Take_Item()
             local targetY = math.floor(obj.pos.y / 32)
             
             findPath(targetX, targetY)
-            sleep(config.Delay_Find_Path)
+            sleep(800)
             
-            -- Coba collect
             if Collect(targetX, targetY) then
                 sleep(1000)
                 return true
@@ -73,19 +79,12 @@ end
 
 -- Fungsi refill ticket
 function Refill_Ticket()
-    logToConsole("Ticket habis, mengambil ticket...")
-    
-    -- Warp ke world storage
     Warp(Storage_World)
     sleep(2000)
     
-    -- Coba ambil ticket maksimal 10x
     for i = 1, 10 do
         if Take_Item() then
-            logToConsole("Berhasil mengambil ticket!")
             sleep(2000)
-            
-            -- Kembali ke world carnival
             Warp(Carnival_World)
             sleep(2000)
             return true
@@ -93,111 +92,152 @@ function Refill_Ticket()
         sleep(1000)
     end
     
-    logToConsole("Gagal mengambil ticket!")
     return false
 end
 
--- ===== MODE 1: MAZE =====
+-- Fungsi untuk deteksi stuck
+function isStuck()
+    local currentX = math.floor(getLocal().pos.x / 32)
+    local currentY = math.floor(getLocal().pos.y / 32)
+    
+    if lastPosition then
+        if lastPosition.x == currentX and lastPosition.y == currentY then
+            if getCurrentTimeInternal() - stuckTimer > config.Max_Stuck_Time then
+                return true
+            end
+        else
+            lastPosition = {x = currentX, y = currentY}
+            stuckTimer = getCurrentTimeInternal()
+            retryCount = 0
+        end
+    else
+        lastPosition = {x = currentX, y = currentY}
+        stuckTimer = getCurrentTimeInternal()
+    end
+    return false
+end
+
+-- Fungsi recovery saat stuck - langsung ke target utama
+function recoverFromStuck()
+    retryCount = retryCount + 1
+    
+    -- Reset stuck detection
+    lastPosition = nil
+    
+    -- Langsung coba ke target utama berdasarkan mode
+    if mode == 1 then
+        findPath(24, 24) -- Target utama maze
+    elseif mode == 2 then
+        findPath(31, 11) -- Target utama death race
+    elseif mode == 3 then
+        findPath(96, 23) -- Target utama growganoth right
+    elseif mode == 4 then
+        findPath(3, 23) -- Target utama growganoth left
+    end
+    
+    sleep(2000)
+    
+    if retryCount >= config.Retry_Attempts then
+        sleep(5000)
+        retryCount = 0
+    end
+end
+
+-- ===== MODE FUNCTIONS =====
 function Maze()
     local x = math.floor(getLocal().pos.x / 32)
     local y = math.floor(getLocal().pos.y / 32)
     
-    -- Masuk ke maze dari luar
+    if isStuck() then
+        recoverFromStuck()
+        return
+    end
+    
     if x == 26 and y == 25 then
         enter(26, 25)
         sleep(500)
-    
-    -- Mulai penyelesaian maze dari 14,32
     elseif x == 14 and y == 32 then
         findPath(24, 24)
         sleep(800)
-    
-    -- Jika sudah mencapai target 24,24
     elseif x == 24 and y == 24 then
         sleep(500)
-    
+        retryCount = 0
     else
         findPath(26, 25)
         sleep(800)
     end
 end
 
--- ===== MODE 2: DEATH RACE =====
 function DeathRace()
     local x = math.floor(getLocal().pos.x / 32)
     local y = math.floor(getLocal().pos.y / 32)
     
-    -- Masuk ke Death Race
+    if isStuck() then
+        recoverFromStuck()
+        return
+    end
+    
     if x == 33 and y == 13 then
         enter(33, 13)
         sleep(500)
-    
-    -- Setelah masuk, mulai dari 31,15 menuju target 31,11
     elseif x == 31 and y == 15 then
         findPath(31, 11)
         sleep(800)
-    
-    -- Jika sudah mencapai target 31,11
     elseif x == 31 and y == 11 then
         requestTileChange(31, 11, 18)
         sleep(500)
-    
+        retryCount = 0
     else
-        -- Default: menuju pintu masuk Death Race
         findPath(33, 13)
         sleep(800)
     end
 end
 
--- ===== MODE 3: GROWGANOTH RIGHT =====
 function GrowganothRight()
     local x = math.floor(getLocal().pos.x / 32)
     local y = math.floor(getLocal().pos.y / 32)
     
-    -- Masuk ke Growganoth Right
+    if isStuck() then
+        recoverFromStuck()
+        return
+    end
+    
     if x == 92 and y == 37 then
         enter(92, 37)
         sleep(500)
-    
-    -- Setelah masuk, mulai dari 96,53 menuju target 96,23
     elseif x == 96 and y == 53 then
         findPath(96, 23)
         sleep(800)
-    
-    -- Jika sudah mencapai target 96,23
     elseif x == 96 and y == 23 then
         requestTileChange(96, 23, 18)
         sleep(500)
-    
+        retryCount = 0
     else
-        -- Default: menuju pintu masuk Growganoth Right
         findPath(92, 37)
         sleep(800)
     end
 end
 
--- ===== MODE 4: GROWGANOTH LEFT =====
 function GrowganothLeft()
     local x = math.floor(getLocal().pos.x / 32)
     local y = math.floor(getLocal().pos.y / 32)
     
-    -- Masuk ke Growganoth Left
+    if isStuck() then
+        recoverFromStuck()
+        return
+    end
+    
     if x == 7 and y == 37 then
         enter(7, 37)
         sleep(500)
-    
-    -- Setelah masuk, mulai dari 3,53 menuju target 3,23
     elseif x == 3 and y == 53 then
         findPath(3, 23)
         sleep(800)
-    
-    -- Jika sudah mencapai target 3,23
     elseif x == 3 and y == 23 then
         requestTileChange(3, 23, 18)
         sleep(500)
-    
+        retryCount = 0
     else
-        -- Default: menuju pintu masuk Growganoth Left
         findPath(7, 37)
         sleep(800)
     end
@@ -205,13 +245,11 @@ end
 
 -- ===== MAIN EXECUTION =====
 function executeMode()
-    -- Cek ticket sebelum menjalankan mode
     if Inventory(Ticket_ID) <= 0 then
         Refill_Ticket()
         return
     end
     
-    -- Jalankan mode yang dipilih
     if mode == 1 then
         Maze()
     elseif mode == 2 then
@@ -228,3 +266,8 @@ while running do
     executeMode()
     sleep(1000)
 end
+
+
+
+
+
