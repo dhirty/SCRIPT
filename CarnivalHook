@@ -11,6 +11,8 @@ local spentTicket = false
 local finishedDeathRace = false
 local finishedGrowganothRight = false
 
+patchMemoryByName("Mod fly")
+
 function enter(x, y)
     local pkt = {}
     pkt.type = 7
