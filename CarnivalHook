@@ -1,4 +1,4 @@
-local mode = 3 -- 1 = Maze, 2 = Death Race, 3 = Growganoth Right
+local mode = 3 -- 1 = Maze, 2 = Death Race, 3 = Growganoth Right, 4 = Growganoth Left
 local running = true
 local Delay_World = 3000
 local Ticket_ID = 1898
@@ -10,8 +10,8 @@ local finishedMaze = false
 local spentTicket = false
 local finishedDeathRace = false
 local finishedGrowganothRight = false
-
-patchMemoryByName("Mod fly")
+local finishedGrowganothLeft = false
+local inCarnivalWorld = false
 
 function enter(x, y)
     local pkt = {}
@@ -103,6 +103,8 @@ function OnVariantHook(varlist, netID)
                 finishedDeathRace = true
             elseif mode == 3 then
                 finishedGrowganothRight = true
+            elseif mode == 4 then
+                finishedGrowganothLeft = true
             end
         end
     end
@@ -118,7 +120,14 @@ function OnVariantHook(varlist, netID)
                 finishedDeathRace = false
             elseif mode == 3 then
                 finishedGrowganothRight = false
+            elseif mode == 4 then
+                finishedGrowganothLeft = false
             end
+        end
+        
+        -- Hook baru: Deteksi ketika masuk world CARNIVAL
+        if string.find(message, "World `wCARNIVAL") then
+            inCarnivalWorld = true
         end
     end
     return false
@@ -154,6 +163,15 @@ function executeNormalMode()
             sleep(500)
         else
             findPath(92, 37)
+            sleep(200)
+        end
+    elseif mode == 4 then
+        -- Mode Growganoth Left
+        if x == 7 and y == 37 then
+            enter(7, 37)
+            sleep(500)
+        else
+            findPath(7, 37)
             sleep(200)
         end
     end
@@ -200,6 +218,18 @@ function handleFinish()
         sleep(500)
         finishedGrowganothRight = false
         return true
+    elseif mode == 4 and finishedGrowganothLeft then
+        while x ~= 7 or y ~= 37 do
+            findPath(7, 37)
+            sleep(200)
+            x = math.floor(getLocal().pos.x / 32)
+            y = math.floor(getLocal().pos.y / 32)
+        end
+        
+        enter(7, 37)
+        sleep(500)
+        finishedGrowganothLeft = false
+        return true
     end
     
     return false
@@ -238,6 +268,16 @@ function handleSpentTicket()
             
             requestTileChange(96, 23, 18)
             sleep(500)
+        elseif mode == 4 then
+            while x ~= 3 or y ~= 23 do
+                findPath(3, 23)
+                sleep(200)
+                x = math.floor(getLocal().pos.x / 32)
+                y = math.floor(getLocal().pos.y / 32)
+            end
+            
+            requestTileChange(3, 23, 18)
+            sleep(500)
         end
         
         spentTicket = false
@@ -260,6 +300,13 @@ function executeMode()
     end
     
     if handleSpentTicket() then
+        return
+    end
+    
+    -- Jika baru masuk ke world CARNIVAL, jalankan logika normal
+    if inCarnivalWorld then
+        executeNormalMode()
+        inCarnivalWorld = false
         return
     end
     
