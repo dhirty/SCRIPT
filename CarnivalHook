@@ -25,6 +25,7 @@ local finishedDeathRace = false
 local finishedGrowganothRight = false
 local finishedGrowganothLeft = false
 
+patchMemoryByName("Mod fly")
 function enter(x, y)
     local pkt = {}
     pkt.type = 7
