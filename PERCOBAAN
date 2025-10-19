@@ -49,7 +49,7 @@ function OnDialogRequest()
                    "add_spacer|small|\n" ..
                    "add_text_input|mode|Mode (1-4)|" .. mode .. "|3|\n" ..
                    "add_text_input|delay|Delay World (ms)|" .. Delay_World .. "|5|\n" ..
-                   "add_text_input|storage|Storage World|" .. Storage_World .. "|20|\n" ..
+                   "add_text_input|storage|Storage World|" .. Storage_World .. "|10|\n" ..
                    "add_spacer|small|\n" ..
                    "add_smalltext|Mode: 1=Maze, 2=Death Race, 3=Grow Right, 4=Grow Left|\n" ..
                    "end_dialog|set_config|Cancel|OK|"
