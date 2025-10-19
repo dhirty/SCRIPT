@@ -57,7 +57,7 @@ function OnDialogRequest()
     sendVariant({[0] = "OnDialogRequest", [1] = dialog}, -1, 0)
 end
 
--- Hook untuk menangani dialog response
+-- Hook untuk menangani dialog response - DIPERBAIKI
 function OnVariantHook(varlist, netID)
     -- Handle finish events
     if varlist and varlist[0] == "OnTalkBubble" and varlist[2] then
@@ -94,43 +94,58 @@ function OnVariantHook(varlist, netID)
         end
     end
     
-    -- Handle setting dialog response
-    if varlist and varlist[0] == "OnDialogRequest" and varlist[1] then
-        local data = tostring(varlist[1])
+    return false
+end
+
+-- HOOK BARU: Menangani response dari dialog - DIPERBAIKI
+function OnDialogReturn(varlist, netID)
+    if varlist and varlist[0] == "OnDialogReturn" and varlist[1] then
+        local dialogName = tostring(varlist[1])
         
-        if string.find(data, "set_config|") then
-            -- Parse dialog response
+        if dialogName == "set_config" then
+            -- varlist[2] berisi nilai-nilai yang dipisahkan oleh |
+            local values = tostring(varlist[2])
             local parts = {}
-            for part in data:gmatch("([^|]+)") do
+            
+            for part in values:gmatch("([^|]+)") do
                 table.insert(parts, part)
             end
             
-            if #parts >= 4 then
-                -- Update configuration
-                local newMode = tonumber(parts[2])
-                local newDelay = tonumber(parts[3])
-                local newStorage = parts[4]
+            -- Parse nilai-nilai dari dialog
+            -- Format: mode|delay|storage
+            if #parts >= 3 then
+                local newMode = tonumber(parts[1])
+                local newDelay = tonumber(parts[2])
+                local newStorage = parts[3]
                 
+                -- Validasi dan update setting
                 if newMode and newMode >= 1 and newMode <= 4 then
                     mode = newMode
+                else
+                    sendPacket(2, "action|input\n|text|Invalid mode! Using current mode: " .. mode)
                 end
                 
                 if newDelay and newDelay > 0 then
                     Delay_World = newDelay
+                else
+                    sendPacket(2, "action|input\n|text|Invalid delay! Using current delay: " .. Delay_World)
                 end
                 
                 if newStorage and #newStorage > 0 then
                     Storage_World = newStorage
+                else
+                    sendPacket(2, "action|input\n|text|Invalid storage world! Using current: " .. Storage_World)
                 end
                 
-                -- Show confirmation
+                -- Konfirmasi setting berhasil diupdate
                 sendPacket(2, "action|input\n|text|Settings updated: Mode=" .. mode .. ", Delay=" .. Delay_World .. "ms, Storage=" .. Storage_World)
+            else
+                sendPacket(2, "action|input\n|text|Error: Invalid dialog response!")
             end
             
             return true
         end
     end
-    
     return false
 end
 
@@ -417,6 +432,7 @@ end
 -- ===== INISIALISASI HOOK =====
 AddHook("ontextpacket", "CommandHandler", OnTextPacket)
 AddHook("onvarlist", "EventHandler", OnVariantHook)
+AddHook("onvarlist", "DialogHandler", OnDialogReturn) -- HOOK BARU
 
 -- Pesan awal saat script dimuat
 sendPacket(2, "action|input\n|text|Bot loaded! Type /run to start, /stop to stop, /set to configure")
