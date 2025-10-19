@@ -1,1 +1,422 @@
-lololo
+local mode = 4 -- 1 = Maze, 2 = Death Race, 3 = Growganoth Right, 4 = Growganoth Left
+local Delay_World = 5000
+local Storage_World = "FBAAI|BASO12"
+local running = false -- Awalnya false, menunggu perintah /run
+local Ticket_ID = 1898
+local Carnival_World = "CARNIVAL"
+
+-- Variabel untuk status setelah finish
+local finishedMaze = false
+local spentTicket = false
+local finishedDeathRace = false
+local finishedGrowganothRight = false
+local finishedGrowganothLeft = false
+
+-- Hook untuk menangani perintah /set, /run, dan /stop
+function OnTextPacket(type, packet)
+    if packet:find("action|input\n|text|") then
+        if packet:find("/set") then
+            OnDialogRequest()
+            return true
+        elseif packet:find("/run") then
+            if not running then
+                running = true
+                sendPacket(2, "action|input\n|text|Bot started! Mode: " .. mode)
+                -- Jalankan loop utama dalam thread terpisah
+                runThread(mainLoop, "MainLoop")
+            else
+                sendPacket(2, "action|input\n|text|Bot is already running!")
+            end
+            return true
+        elseif packet:find("/stop") then
+            if running then
+                running = false
+                killThread("MainLoop")
+                sendPacket(2, "action|input\n|text|Bot stopped!")
+            else
+                sendPacket(2, "action|input\n|text|Bot is not running!")
+            end
+            return true
+        end
+    end
+    return false
+end
+
+-- Fungsi untuk menampilkan dialog setting
+function OnDialogRequest()
+    local dialog = "set_default_color|`o\n" ..
+                   "add_label_with_icon|big|`wSetting Bot``|left|32|\n" ..
+                   "add_spacer|small|\n" ..
+                   "add_text_input|mode|Mode (1-4)|" .. mode .. "|3|\n" ..
+                   "add_text_input|delay|Delay World (ms)|" .. Delay_World .. "|5|\n" ..
+                   "add_text_input|storage|Storage World|" .. Storage_World .. "|20|\n" ..
+                   "add_spacer|small|\n" ..
+                   "add_smalltext|Mode: 1=Maze, 2=Death Race, 3=Grow Right, 4=Grow Left|\n" ..
+                   "end_dialog|set_config|Cancel|OK|"
+    
+    sendVariant({[0] = "OnDialogRequest", [1] = dialog}, -1, 0)
+end
+
+-- Hook untuk menangani dialog response
+function OnVariantHook(varlist, netID)
+    -- Handle finish events
+    if varlist and varlist[0] == "OnTalkBubble" and varlist[2] then
+        local message = tostring(varlist[2])
+        
+        if string.find(message, "You finished") then
+            if mode == 1 then
+                finishedMaze = true
+                spentTicket = false
+            elseif mode == 2 then
+                finishedDeathRace = true
+            elseif mode == 3 then
+                finishedGrowganothRight = true
+            elseif mode == 4 then
+                finishedGrowganothLeft = true
+            end
+        end
+    end
+    
+    if varlist and varlist[0] == "OnConsoleMessage" and varlist[1] then
+        local message = tostring(varlist[1])
+        
+        if string.find(message, "You spent") then
+            spentTicket = true
+            if mode == 1 then
+                finishedMaze = false
+            elseif mode == 2 then
+                finishedDeathRace = false
+            elseif mode == 3 then
+                finishedGrowganothRight = false
+            elseif mode == 4 then
+                finishedGrowganothLeft = false
+            end
+        end
+    end
+    
+    -- Handle setting dialog response
+    if varlist and varlist[0] == "OnDialogRequest" and varlist[1] then
+        local data = tostring(varlist[1])
+        
+        if string.find(data, "set_config|") then
+            -- Parse dialog response
+            local parts = {}
+            for part in data:gmatch("([^|]+)") do
+                table.insert(parts, part)
+            end
+            
+            if #parts >= 4 then
+                -- Update configuration
+                local newMode = tonumber(parts[2])
+                local newDelay = tonumber(parts[3])
+                local newStorage = parts[4]
+                
+                if newMode and newMode >= 1 and newMode <= 4 then
+                    mode = newMode
+                end
+                
+                if newDelay and newDelay > 0 then
+                    Delay_World = newDelay
+                end
+                
+                if newStorage and #newStorage > 0 then
+                    Storage_World = newStorage
+                end
+                
+                -- Show confirmation
+                sendPacket(2, "action|input\n|text|Settings updated: Mode=" .. mode .. ", Delay=" .. Delay_World .. "ms, Storage=" .. Storage_World)
+            end
+            
+            return true
+        end
+    end
+    
+    return false
+end
+
+function enter(x, y)
+    local pkt = {}
+    pkt.type = 7
+    pkt.punchx = x
+    pkt.punchy = y        
+    pkt.x = getLocal().pos.x        
+    pkt.y = getLocal().pos.y       
+    pkt.value = 18
+    sendPacketRaw(false, pkt)
+end
+
+-- Fungsi cek inventory
+function Inventory(id)
+    for _, x in pairs(getInventory()) do
+        if x.id == id then
+            return x.amount
+        end
+    end
+    return 0
+end
+
+-- Fungsi warp
+function Warp(worldName)
+    sleep(100)
+    sendPacket(3, "action|join_request\nname|" .. worldName)
+    sleep(Delay_World)
+end
+
+-- Fungsi collect item dalam range 3 tile
+function Collect(x, y)
+    local playerX = math.floor(getLocal().pos.x / 32)
+    local playerY = math.floor(getLocal().pos.y / 32)
+    
+    if math.abs(playerX - x) <= 3 and math.abs(playerY - y) <= 3 then
+        requestCollect(x, y, Ticket_ID)
+        return true
+    end
+    return false
+end
+
+-- Fungsi take ticket
+function Take_Item()
+    for _, obj in pairs(getWorldObject()) do
+        if obj.id == Ticket_ID then
+            local targetX = math.floor(obj.pos.x / 32)
+            local targetY = math.floor(obj.pos.y / 32)
+            
+            findPath(targetX, targetY)
+            sleep(200)
+            
+            if Collect(targetX, targetY) then
+                sleep(1000)
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Fungsi refill ticket
+function Refill_Ticket()
+    Warp(Storage_World)
+    sleep(2000)
+    
+    for i = 1, 10 do
+        if Take_Item() then
+            sleep(2000)
+            Warp(Carnival_World)
+            sleep(2000)
+            
+            -- Tunggu dan periksa apakah sudah sampai di world CARNIVAL
+            local waitAttempts = 0
+            local maxWaitAttempts = 10
+            
+            while waitAttempts < maxWaitAttempts do
+                local world = getWorld()
+                if world and world.name and string.find(world.name, "CARNIVAL") then
+                    -- Sudah sampai di CARNIVAL, jalankan logika normal sekali
+                    executeNormalMode()
+                    return true
+                end
+                
+                sleep(1000)
+                waitAttempts = waitAttempts + 1
+            end
+            
+            return true
+        end
+        sleep(1000)
+    end
+    
+    return false
+end
+
+-- ===== FUNGSI LOGIKA NORMAL =====
+function executeNormalMode()
+    local x = math.floor(getLocal().pos.x / 32)
+    local y = math.floor(getLocal().pos.y / 32)
+    
+    if mode == 1 then
+        -- Mode Maze
+        if x == 26 and y == 25 then
+            enter(26, 25)
+            sleep(500)
+        else
+            findPath(26, 25)
+            sleep(200)
+        end
+    elseif mode == 2 then
+        -- Mode Death Race
+        if x == 33 and y == 13 then
+            enter(33, 13)
+            sleep(500)
+        else
+            findPath(33, 13)
+            sleep(200)
+        end
+    elseif mode == 3 then
+        -- Mode Growganoth Right
+        if x == 92 and y == 37 then
+            enter(92, 37)
+            sleep(500)
+        else
+            findPath(92, 37)
+            sleep(200)
+        end
+    elseif mode == 4 then
+        -- Mode Growganoth Left
+        if x == 7 and y == 37 then
+            enter(7, 37)
+            sleep(500)
+        else
+            findPath(7, 37)
+            sleep(200)
+        end
+    end
+end
+
+-- ===== FUNGSI HANDLE FINISH =====
+function handleFinish()
+    local x = math.floor(getLocal().pos.x / 32)
+    local y = math.floor(getLocal().pos.y / 32)
+    
+    if mode == 1 and finishedMaze then
+        while x ~= 26 or y ~= 25 do
+            findPath(26, 25)
+            sleep(200)
+            x = math.floor(getLocal().pos.x / 32)
+            y = math.floor(getLocal().pos.y / 32)
+        end
+        
+        enter(26, 25)
+        sleep(500)
+        finishedMaze = false
+        return true
+    elseif mode == 2 and finishedDeathRace then
+        while x ~= 33 or y ~= 13 do
+            findPath(33, 13)
+            sleep(200)
+            x = math.floor(getLocal().pos.x / 32)
+            y = math.floor(getLocal().pos.y / 32)
+        end
+        
+        enter(33, 13)
+        sleep(500)
+        finishedDeathRace = false
+        return true
+    elseif mode == 3 and finishedGrowganothRight then
+        while x ~= 92 or y ~= 37 do
+            findPath(92, 37)
+            sleep(200)
+            x = math.floor(getLocal().pos.x / 32)
+            y = math.floor(getLocal().pos.y / 32)
+        end
+        
+        enter(92, 37)
+        sleep(500)
+        finishedGrowganothRight = false
+        return true
+    elseif mode == 4 and finishedGrowganothLeft then
+        while x ~= 7 or y ~= 37 do
+            findPath(7, 37)
+            sleep(200)
+            x = math.floor(getLocal().pos.x / 32)
+            y = math.floor(getLocal().pos.y / 32)
+        end
+        
+        enter(7, 37)
+        sleep(500)
+        finishedGrowganothLeft = false
+        return true
+    end
+    
+    return false
+end
+
+-- ===== FUNGSI HANDLE SPENT TICKET =====
+function handleSpentTicket()
+    local x = math.floor(getLocal().pos.x / 32)
+    local y = math.floor(getLocal().pos.y / 32)
+    
+    if spentTicket then
+        if mode == 1 then
+            while x ~= 24 or y ~= 24 do
+                findPath(24, 24)
+                sleep(200)
+                x = math.floor(getLocal().pos.x / 32)
+                y = math.floor(getLocal().pos.y / 32)
+            end
+        elseif mode == 2 then
+            while x ~= 31 or y ~= 11 do
+                findPath(31, 11)
+                sleep(200)
+                x = math.floor(getLocal().pos.x / 32)
+                y = math.floor(getLocal().pos.y / 32)
+            end
+            
+            requestTileChange(31, 11, 18)
+            sleep(500)
+        elseif mode == 3 then
+            while x ~= 96 or y ~= 23 do
+                findPath(96, 23)
+                sleep(200)
+                x = math.floor(getLocal().pos.x / 32)
+                y = math.floor(getLocal().pos.y / 32)
+            end
+            
+            requestTileChange(96, 23, 18)
+            sleep(500)
+        elseif mode == 4 then
+            while x ~= 3 or y ~= 23 do
+                findPath(3, 23)
+                sleep(200)
+                x = math.floor(getLocal().pos.x / 32)
+                y = math.floor(getLocal().pos.y / 32)
+            end
+            
+            requestTileChange(3, 23, 18)
+            sleep(500)
+        end
+        
+        spentTicket = false
+        return true
+    end
+    
+    return false
+end
+
+-- ===== MAIN EXECUTION =====
+function executeMode()
+    if Inventory(Ticket_ID) <= 0 then
+        Refill_Ticket()
+        return
+    end
+    
+    -- Prioritaskan penanganan event finish dan spent ticket
+    if handleFinish() then
+        return
+    end
+    
+    if handleSpentTicket() then
+        return
+    end
+    
+    -- Jika tidak ada event, jalankan logika normal
+    executeNormalMode()
+end
+
+-- ===== LOOP UTAMA =====
+function mainLoop()
+    -- Jalankan logika normal sekali di awal
+    executeNormalMode()
+    
+    -- Loop utama untuk menangani event dan refill ticket
+    while running do
+        executeMode()
+        sleep(1000)
+    end
+end
+
+-- ===== INISIALISASI HOOK =====
+AddHook("ontextpacket", "CommandHandler", OnTextPacket)
+AddHook("onvarlist", "EventHandler", OnVariantHook)
+
+-- Pesan awal saat script dimuat
+sendPacket(2, "action|input\n|text|Bot loaded! Type /run to start, /stop to stop, /set to configure")
