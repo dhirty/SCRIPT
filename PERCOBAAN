@@ -1,7 +1,7 @@
-local mode = 2 -- 1 = Maze, 2 = Death Race, 3 = Growganoth Right, 4 = Growganoth Left
+local mode = 4 -- 1 = Maze, 2 = Death Race, 3 = Growganoth Right, 4 = Growganoth Left
 local Delay_World = 5000
 local Storage_World = "FBAAI|BASO12"
-local running = false -- Awalnya false, menunggu perintah /run
+local running = false
 local Ticket_ID = 1898
 local Carnival_World = "CARNIVAL"
 
@@ -12,23 +12,24 @@ local finishedDeathRace = false
 local finishedGrowganothRight = false
 local finishedGrowganothLeft = false
 
--- Hook untuk menangani perintah /set, /run, dan /stop
+-- Hook untuk menangani perintah chat
 function OnTextPacket(type, packet)
     if packet:find("action|input\n|text|") then
-        if packet:find("/set") then
+        local text = packet:match("|text|(.+)")
+        
+        if text == "/set" then
             OnDialogRequest()
             return true
-        elseif packet:find("/run") then
+        elseif text == "/run" then
             if not running then
                 running = true
                 sendPacket(2, "action|input\n|text|Bot started! Mode: " .. mode)
-                -- Jalankan loop utama dalam thread terpisah
                 runThread(mainLoop, "MainLoop")
             else
                 sendPacket(2, "action|input\n|text|Bot is already running!")
             end
             return true
-        elseif packet:find("/stop") then
+        elseif text == "/stop" then
             if running then
                 running = false
                 killThread("MainLoop")
@@ -49,7 +50,7 @@ function OnDialogRequest()
                    "add_spacer|small|\n" ..
                    "add_text_input|mode|Mode (1-4)|" .. mode .. "|3|\n" ..
                    "add_text_input|delay|Delay World (ms)|" .. Delay_World .. "|5|\n" ..
-                   "add_text_input|storage|Storage World|" .. Storage_World .. "|10|\n" ..
+                   "add_text_input|storage|Storage World|" .. Storage_World .. "|20|\n" ..
                    "add_spacer|small|\n" ..
                    "add_smalltext|Mode: 1=Maze, 2=Death Race, 3=Grow Right, 4=Grow Left|\n" ..
                    "end_dialog|set_config|Cancel|OK|"
@@ -57,10 +58,10 @@ function OnDialogRequest()
     sendVariant({[0] = "OnDialogRequest", [1] = dialog}, -1, 0)
 end
 
--- Hook untuk menangani dialog response - DIPERBAIKI
+-- Hook untuk menangani semua variant list
 function OnVariantHook(varlist, netID)
     -- Handle finish events
-    if varlist and varlist[0] == "OnTalkBubble" and varlist[2] then
+    if varlist[0] == "OnTalkBubble" and varlist[2] then
         local message = tostring(varlist[2])
         
         if string.find(message, "You finished") then
@@ -77,7 +78,7 @@ function OnVariantHook(varlist, netID)
         end
     end
     
-    if varlist and varlist[0] == "OnConsoleMessage" and varlist[1] then
+    if varlist[0] == "OnConsoleMessage" and varlist[1] then
         local message = tostring(varlist[1])
         
         if string.find(message, "You spent") then
@@ -94,58 +95,42 @@ function OnVariantHook(varlist, netID)
         end
     end
     
-    return false
-end
-
--- HOOK BARU: Menangani response dari dialog - DIPERBAIKI
-function OnDialogReturn(varlist, netID)
-    if varlist and varlist[0] == "OnDialogReturn" and varlist[1] then
-        local dialogName = tostring(varlist[1])
+    -- Handle dialog return - INI YANG DIPERBAIKI
+    if varlist[0] == "OnDialogReturn" then
+        local dialogData = tostring(varlist[1])
         
-        if dialogName == "set_config" then
-            -- varlist[2] berisi nilai-nilai yang dipisahkan oleh |
-            local values = tostring(varlist[2])
-            local parts = {}
+        if string.find(dialogData, "set_config") then
+            -- Parse the dialog data
+            local modeStr = dialogData:match("mode|(%d+)")
+            local delayStr = dialogData:match("delay|(%d+)")
+            local storageStr = dialogData:match("storage|([^|]+)")
             
-            for part in values:gmatch("([^|]+)") do
-                table.insert(parts, part)
-            end
-            
-            -- Parse nilai-nilai dari dialog
-            -- Format: mode|delay|storage
-            if #parts >= 3 then
-                local newMode = tonumber(parts[1])
-                local newDelay = tonumber(parts[2])
-                local newStorage = parts[3]
-                
-                -- Validasi dan update setting
+            -- Update settings
+            if modeStr then
+                local newMode = tonumber(modeStr)
                 if newMode and newMode >= 1 and newMode <= 4 then
                     mode = newMode
-                else
-                    sendPacket(2, "action|input\n|text|Invalid mode! Using current mode: " .. mode)
                 end
-                
+            end
+            
+            if delayStr then
+                local newDelay = tonumber(delayStr)
                 if newDelay and newDelay > 0 then
                     Delay_World = newDelay
-                else
-                    sendPacket(2, "action|input\n|text|Invalid delay! Using current delay: " .. Delay_World)
                 end
-                
-                if newStorage and #newStorage > 0 then
-                    Storage_World = newStorage
-                else
-                    sendPacket(2, "action|input\n|text|Invalid storage world! Using current: " .. Storage_World)
-                end
-                
-                -- Konfirmasi setting berhasil diupdate
-                sendPacket(2, "action|input\n|text|Settings updated: Mode=" .. mode .. ", Delay=" .. Delay_World .. "ms, Storage=" .. Storage_World)
-            else
-                sendPacket(2, "action|input\n|text|Error: Invalid dialog response!")
             end
+            
+            if storageStr then
+                Storage_World = storageStr
+            end
+            
+            -- Confirm settings update
+            sendPacket(2, "action|input\n|text|Settings updated: Mode=" .. mode .. ", Delay=" .. Delay_World .. "ms, Storage=" .. Storage_World)
             
             return true
         end
     end
+    
     return false
 end
 
@@ -226,7 +211,6 @@ function Refill_Ticket()
             while waitAttempts < maxWaitAttempts do
                 local world = getWorld()
                 if world and world.name and string.find(world.name, "CARNIVAL") then
-                    -- Sudah sampai di CARNIVAL, jalankan logika normal sekali
                     executeNormalMode()
                     return true
                 end
@@ -249,7 +233,6 @@ function executeNormalMode()
     local y = math.floor(getLocal().pos.y / 32)
     
     if mode == 1 then
-        -- Mode Maze
         if x == 26 and y == 25 then
             enter(26, 25)
             sleep(500)
@@ -258,7 +241,6 @@ function executeNormalMode()
             sleep(200)
         end
     elseif mode == 2 then
-        -- Mode Death Race
         if x == 33 and y == 13 then
             enter(33, 13)
             sleep(500)
@@ -267,7 +249,6 @@ function executeNormalMode()
             sleep(200)
         end
     elseif mode == 3 then
-        -- Mode Growganoth Right
         if x == 92 and y == 37 then
             enter(92, 37)
             sleep(500)
@@ -276,7 +257,6 @@ function executeNormalMode()
             sleep(200)
         end
     elseif mode == 4 then
-        -- Mode Growganoth Left
         if x == 7 and y == 37 then
             enter(7, 37)
             sleep(500)
@@ -404,7 +384,6 @@ function executeMode()
         return
     end
     
-    -- Prioritaskan penanganan event finish dan spent ticket
     if handleFinish() then
         return
     end
@@ -413,16 +392,13 @@ function executeMode()
         return
     end
     
-    -- Jika tidak ada event, jalankan logika normal
     executeNormalMode()
 end
 
 -- ===== LOOP UTAMA =====
 function mainLoop()
-    -- Jalankan logika normal sekali di awal
     executeNormalMode()
     
-    -- Loop utama untuk menangani event dan refill ticket
     while running do
         executeMode()
         sleep(1000)
@@ -432,7 +408,6 @@ end
 -- ===== INISIALISASI HOOK =====
 AddHook("ontextpacket", "CommandHandler", OnTextPacket)
 AddHook("onvarlist", "EventHandler", OnVariantHook)
-AddHook("onvarlist", "DialogHandler", OnDialogReturn) -- HOOK BARU
 
 -- Pesan awal saat script dimuat
 sendPacket(2, "action|input\n|text|Bot loaded! Type /run to start, /stop to stop, /set to configure")
