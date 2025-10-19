@@ -1,4 +1,4 @@
-local mode = 4 -- 1 = Maze, 2 = Death Race, 3 = Growganoth Right, 4 = Growganoth Left
+local mode = 2 -- 1 = Maze, 2 = Death Race, 3 = Growganoth Right, 4 = Growganoth Left
 local Delay_World = 5000
 local Storage_World = "FBAAI|BASO12"
 local running = false -- Awalnya false, menunggu perintah /run
