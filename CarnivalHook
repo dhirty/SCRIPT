@@ -1,22 +1,9 @@
-local mode = 2 -- 1 = Maze, 2 = Death Race, 3 = Growganoth Right, 4 = Growganoth Left
+local mode = 4 -- 1 = Maze, 2 = Death Race, 3 = Growganoth Right, 4 = Growganoth Left
 local running = true
-local Delay_World = 5000
+local Delay_World = 3000
 local Ticket_ID = 1898
 local Carnival_World = "CARNIVAL"
 local Storage_World = "FBAAI|BASO12"
-
--- Variabel baru untuk sistem drop
-local Target_Drop_Pos = 12
-local Price_Action = {
-    3010,
-    1940,
-    1936,
-    1942,
-    2216,
-    2980,
-    12290,
-    10064
-}
 
 -- Variabel untuk status setelah finish
 local finishedMaze = false
@@ -25,7 +12,6 @@ local finishedDeathRace = false
 local finishedGrowganothRight = false
 local finishedGrowganothLeft = false
 
-patchMemoryByName("Mod fly")
 function enter(x, y)
     local pkt = {}
     pkt.type = 7
@@ -85,69 +71,10 @@ function Take_Item()
     return false
 end
 
--- Fungsi drop item
-function DropItem(id, count)
-    sendPacket(2, "action|drop\n|itemID|" .. id)
-    sendPacket(2, "action|dialog_return\ndialog_name|drop_item\nitemID|" .. id .. "|\ncount|" .. count)
-    sleep(500)
-end
-
--- Fungsi drop semua item price action
-function Drop()
-    for _, itemID in ipairs(Price_Action) do
-        local itemCount = Inventory(itemID)
-        
-        while itemCount > 0 do
-            local tiles = getTile()
-            local foundPosition = false
-            
-            for _, tile in ipairs(tiles) do
-                if tile.fg == Target_Drop_Pos then
-                    foundPosition = true
-                    findPath(tile.pos.x, tile.pos.y)
-                    sleep(1000)
-                    
-                    -- Drop item
-                    DropItem(itemID, itemCount)
-                    sleep(1000)
-                    
-                    -- Update jumlah item setelah drop
-                    itemCount = Inventory(itemID)
-                    break
-                end
-            end
-            
-            if not foundPosition then
-                break
-            end
-            
-            sleep(1000)
-        end
-    end
-    
-    return true
-end
-
--- Fungsi cek apakah ada item price action di inventory
-function hasPriceActionItems()
-    for _, itemID in ipairs(Price_Action) do
-        if Inventory(itemID) > 0 then
-            return true
-        end
-    end
-    return false
-end
-
--- Fungsi refill ticket yang diperbaiki
+-- Fungsi refill ticket
 function Refill_Ticket()
     Warp(Storage_World)
     sleep(2000)
-    
-    -- Cek dan drop item price action jika ada
-    if hasPriceActionItems() then
-        Drop()
-        sleep(2000)
-    end
     
     for i = 1, 10 do
         if Take_Item() then
