@@ -17,45 +17,71 @@ function OnTextPacket(type, packet)
     if packet:find("action|input\n|text|") then
         local text = packet:match("|text|(.+)")
         
-        if text == "/set" then
-            OnDialogRequest()
-            return true
-        elseif text == "/run" then
+        if text == "/run" then
             if not running then
                 running = true
-                sendPacket(2, "action|input\n|text|Bot started! Mode: " .. mode)
+                logToConsole("Bot started! Mode: " .. mode)
                 runThread(mainLoop, "MainLoop")
             else
-                sendPacket(2, "action|input\n|text|Bot is already running!")
+                logToConsole("Bot is already running!")
             end
             return true
         elseif text == "/stop" then
             if running then
                 running = false
                 killThread("MainLoop")
-                sendPacket(2, "action|input\n|text|Bot stopped!")
+                logToConsole("Bot stopped!")
             else
-                sendPacket(2, "action|input\n|text|Bot is not running!")
+                logToConsole("Bot is not running!")
             end
+            return true
+        elseif text:find("^/set ") then
+            -- Handle /set commands
+            local command = text:sub(6) -- Remove "/set "
+            
+            if command == "1" or command == "2" or command == "3" or command == "4" then
+                -- Set mode
+                local newMode = tonumber(command)
+                mode = newMode
+                logToConsole("Mode set to: " .. mode)
+                return true
+            elseif command:find("delay ") then
+                -- Set delay
+                local delayValue = command:match("delay (%d+)")
+                if delayValue then
+                    local newDelay = tonumber(delayValue)
+                    if newDelay and newDelay > 0 then
+                        Delay_World = newDelay
+                        logToConsole("Delay set to: " .. Delay_World .. "ms")
+                    else
+                        logToConsole("Invalid delay value!")
+                    end
+                else
+                    logToConsole("Usage: /set delay <milliseconds>")
+                end
+                return true
+            elseif command:find("storage ") then
+                -- Set storage world
+                local storageValue = command:match("storage (.+)")
+                if storageValue then
+                    Storage_World = storageValue
+                    logToConsole("Storage world set to: " .. Storage_World)
+                else
+                    logToConsole("Usage: /set storage <world_name>")
+                end
+                return true
+            else
+                -- Show help
+                logToConsole("Available commands: /set 1|2|3|4, /set delay <ms>, /set storage <world>")
+                return true
+            end
+        elseif text == "/status" then
+            -- Show current status
+            logToConsole("Current: Mode=" .. mode .. ", Delay=" .. Delay_World .. "ms, Storage=" .. Storage_World .. ", Running=" .. tostring(running))
             return true
         end
     end
     return false
-end
-
--- Fungsi untuk menampilkan dialog setting
-function OnDialogRequest()
-    local dialog = "set_default_color|`o\n" ..
-                   "add_label_with_icon|big|`wSetting Bot``|left|32|\n" ..
-                   "add_spacer|small|\n" ..
-                   "add_text_input|mode|Mode (1-4)|" .. mode .. "|3|\n" ..
-                   "add_text_input|delay|Delay World (ms)|" .. Delay_World .. "|5|\n" ..
-                   "add_text_input|storage|Storage World|" .. Storage_World .. "|20|\n" ..
-                   "add_spacer|small|\n" ..
-                   "add_smalltext|Mode: 1=Maze, 2=Death Race, 3=Grow Right, 4=Grow Left|\n" ..
-                   "end_dialog|set_config|Cancel|OK|"
-    
-    sendVariant({[0] = "OnDialogRequest", [1] = dialog}, -1, 0)
 end
 
 -- Hook untuk menangani semua variant list
@@ -68,12 +94,19 @@ function OnVariantHook(varlist, netID)
             if mode == 1 then
                 finishedMaze = true
                 spentTicket = false
+                logToConsole("Maze finished! Returning to start...")
             elseif mode == 2 then
                 finishedDeathRace = true
+                spentTicket = false
+                logToConsole("Death Race finished! Returning to start...")
             elseif mode == 3 then
                 finishedGrowganothRight = true
+                spentTicket = false
+                logToConsole("Growganoth Right finished! Returning to start...")
             elseif mode == 4 then
                 finishedGrowganothLeft = true
+                spentTicket = false
+                logToConsole("Growganoth Left finished! Returning to start...")
             end
         end
     end
@@ -92,42 +125,7 @@ function OnVariantHook(varlist, netID)
             elseif mode == 4 then
                 finishedGrowganothLeft = false
             end
-        end
-    end
-    
-    -- Handle dialog return - INI YANG DIPERBAIKI
-    if varlist[0] == "OnDialogReturn" then
-        local dialogData = tostring(varlist[1])
-        
-        if string.find(dialogData, "set_config") then
-            -- Parse the dialog data
-            local modeStr = dialogData:match("mode|(%d+)")
-            local delayStr = dialogData:match("delay|(%d+)")
-            local storageStr = dialogData:match("storage|([^|]+)")
-            
-            -- Update settings
-            if modeStr then
-                local newMode = tonumber(modeStr)
-                if newMode and newMode >= 1 and newMode <= 4 then
-                    mode = newMode
-                end
-            end
-            
-            if delayStr then
-                local newDelay = tonumber(delayStr)
-                if newDelay and newDelay > 0 then
-                    Delay_World = newDelay
-                end
-            end
-            
-            if storageStr then
-                Storage_World = storageStr
-            end
-            
-            -- Confirm settings update
-            sendPacket(2, "action|input\n|text|Settings updated: Mode=" .. mode .. ", Delay=" .. Delay_World .. "ms, Storage=" .. Storage_World)
-            
-            return true
+            logToConsole("Ticket spent! Going to target...")
         end
     end
     
@@ -195,6 +193,7 @@ end
 
 -- Fungsi refill ticket
 function Refill_Ticket()
+    logToConsole("Ticket empty! Refilling from storage...")
     Warp(Storage_World)
     sleep(2000)
     
@@ -211,6 +210,7 @@ function Refill_Ticket()
             while waitAttempts < maxWaitAttempts do
                 local world = getWorld()
                 if world and world.name and string.find(world.name, "CARNIVAL") then
+                    logToConsole("Successfully returned to CARNIVAL world")
                     executeNormalMode()
                     return true
                 end
@@ -224,6 +224,7 @@ function Refill_Ticket()
         sleep(1000)
     end
     
+    logToConsole("Failed to collect ticket after 10 attempts!")
     return false
 end
 
@@ -410,4 +411,4 @@ AddHook("ontextpacket", "CommandHandler", OnTextPacket)
 AddHook("onvarlist", "EventHandler", OnVariantHook)
 
 -- Pesan awal saat script dimuat
-sendPacket(2, "action|input\n|text|Bot loaded! Type /run to start, /stop to stop, /set to configure")
+logToConsole("Bot loaded! Commands: /run, /stop, /set 1|2|3|4, /set delay <ms>, /set storage <world>, /status")
